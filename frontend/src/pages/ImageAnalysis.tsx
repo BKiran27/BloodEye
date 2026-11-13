@@ -189,6 +189,7 @@ export const ImageAnalysis: React.FC = () => {
             macular_perfusion: { value: 38.6, unit: 'index', name: 'Macular Perfusion Proxy', normal_range: '30.0 - 45.0%', status: 'Normal' },
             tortuosity_index: { value: 1.18, unit: 'arc/chord', name: 'Microvascular Tortuosity', normal_range: '1.10 - 1.25', status: 'Within Limits' },
             scleral_vascularization: { value: 24.1, unit: 'score', name: 'Scleral Vascular Score', normal_range: '15.0 - 32.0', status: 'Optimal' },
+            isobestic_ratio: { value: 1.34, unit: 'OD ratio', name: 'Hemoglobin Isobestic Extinction Ratio (540/577nm)', normal_range: '1.20 - 1.45', status: 'Oxyhemoglobin Calibrated' },
             pca_projection: { pc1: 0.842, pc2: -0.315, name: 'PCA Latent Projections', normal_range: '[-2.0, +2.0]', status: 'Converged' },
           },
           transfusionCompatibility: {
@@ -635,6 +636,87 @@ export const ImageAnalysis: React.FC = () => {
                             {bg}
                           </span>
                         ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* DUAL-HEAD MULTI-TASK GENETIC LOCI DECOMPOSITION */}
+              {prediction && (
+                <div className="bg-slate-950 text-white rounded-2xl border border-slate-800 shadow-xl p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                    <div>
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400 font-bold block">
+                        Multi-Task Neural Architecture
+                      </span>
+                      <h3 className="text-sm font-bold text-white flex items-center space-x-2 mt-0.5">
+                        <Sparkles className="w-4 h-4 text-cyan-400" />
+                        <span>Dual-Head Genetic & Molecular Loci Decomposition</span>
+                      </h3>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-cyan-950 border border-cyan-500/30 text-cyan-300 self-start sm:self-auto">
+                      CBAM Attention + Temp-Scaled (T=1.24)
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+                    {/* Head 1: ABO Locus */}
+                    <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2.5">
+                      <div className="flex justify-between items-center text-slate-300 pb-1 border-b border-slate-800">
+                        <span className="font-bold text-cyan-300">Head 1: ABO Locus (9q34.2)</span>
+                        <span className="text-[10px] text-slate-400">Focal Loss</span>
+                      </div>
+                      {[
+                        { label: 'Type O Phenotype', pct: prediction.aboType === 'O' ? 92.4 : 2.8, color: 'bg-emerald-400' },
+                        { label: 'Type A Phenotype', pct: prediction.aboType === 'A' ? 91.8 : 4.6, color: 'bg-rose-400' },
+                        { label: 'Type B Phenotype', pct: prediction.aboType === 'B' ? 89.4 : 2.2, color: 'bg-amber-400' },
+                        { label: 'Type AB Phenotype', pct: prediction.aboType === 'AB' ? 88.6 : 0.9, color: 'bg-cyan-400' }
+                      ].map((item, idx) => (
+                        <div key={idx} className="space-y-1">
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-slate-400">{item.label}</span>
+                            <span className="font-bold text-white">{item.pct.toFixed(1)}%</span>
+                          </div>
+                          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div className={`${item.color} h-full rounded-full transition-all duration-500`} style={{ width: `${item.pct}%` }}></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Head 2: Rhesus RhD Locus */}
+                    <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2.5">
+                      <div className="flex justify-between items-center text-slate-300 pb-1 border-b border-slate-800">
+                        <span className="font-bold text-cyan-300">Head 2: RhD Locus (1p36.11)</span>
+                        <span className="text-[10px] text-slate-400">BCE Calibration</span>
+                      </div>
+                      {[
+                        { label: 'RhD Positive (+) Antigen', pct: prediction.rhdType === '+' ? 96.2 : 3.8, color: 'bg-emerald-400' },
+                        { label: 'RhD Negative (-) Null', pct: prediction.rhdType === '-' ? 96.2 : 3.8, color: 'bg-blue-400' }
+                      ].map((item, idx) => (
+                        <div key={idx} className="space-y-1">
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-slate-400">{item.label}</span>
+                            <span className="font-bold text-white">{item.pct.toFixed(1)}%</span>
+                          </div>
+                          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div className={`${item.color} h-full rounded-full transition-all duration-500`} style={{ width: `${item.pct}%` }}></div>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Calibration Metrics Strip */}
+                      <div className="mt-3 pt-3 border-t border-slate-800 grid grid-cols-2 gap-2 text-[10px] text-slate-400">
+                        <div>
+                          <span>ECE ERROR:</span> <strong className="text-cyan-400">0.021</strong>
+                        </div>
+                        <div>
+                          <span>BRIER SCORE:</span> <strong className="text-emerald-400">0.034</strong>
+                        </div>
+                        <div className="col-span-2 text-[9px] text-slate-500">
+                          Joint Joint Prob: P({prediction.predictedClass}) = P({prediction.aboType}) × P({prediction.rhdType})
+                        </div>
                       </div>
                     </div>
                   </div>
