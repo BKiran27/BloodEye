@@ -26,6 +26,7 @@ import {
   Share2
 } from 'lucide-react';
 import api from '../services/api';
+import { runClientSideMLInference } from '../services/clientInferenceEngine';
 
 interface OcularFeatureItem {
   value: number;
@@ -51,6 +52,7 @@ interface DetailedPredictionResult {
     plasma_antibodies: string;
   };
   gradcamOverlay?: string;
+  vesselMaskOverlay?: string;
   patientData: {
     name: string;
     id: string;
@@ -88,7 +90,7 @@ export const ImageAnalysis: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [prediction, setPrediction] = useState<DetailedPredictionResult | null>(null);
   const [status, setStatus] = useState<'idle' | 'validating' | 'analyzing' | 'done' | 'error'>('idle');
-  const [activeImageView, setActiveImageView] = useState<'original' | 'gradcam' | 'split'>('gradcam');
+  const [activeImageView, setActiveImageView] = useState<'original' | 'gradcam' | 'vessels' | 'split'>('gradcam');
   const [showReportModal, setShowReportModal] = useState<boolean>(false);
 
   // Patient Registration Form State
@@ -163,55 +165,22 @@ export const ImageAnalysis: React.FC = () => {
       setPrediction(parsedPrediction);
       setStatus('done');
     } catch (err: any) {
-      console.warn('Backend inference fallback:', err);
-      // Fallback research prediction
-      setTimeout(() => {
-        const bloodGroups: BloodGroup[] = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-        const chosen = 'O+';
-        const scores: Record<BloodGroup, number> = {
-          'A+': 0.08, 'A-': 0.02, 'B+': 0.04, 'B-': 0.01,
-          'AB+': 0.02, 'AB-': 0.01, 'O+': 0.78, 'O-': 0.04
-        };
-        setPrediction({
-          id: 'local-' + Date.now(),
-          predictedClass: chosen,
-          confidence: 0.942,
-          classScores: scores,
-          aboType: 'O',
-          rhdType: '+',
-          features: {
-            vascular_density: { value: 14.8, unit: '%', name: 'Vascular Density', normal_range: '10.0 - 18.0%', status: 'Normal' },
-            avr_ratio: { value: 0.69, unit: 'ratio', name: 'Arteriovenous Ratio (AVR)', normal_range: '0.65 - 0.75', status: 'Optimal' },
-            vessel_thickness: { value: 18.4, unit: 'μm', name: 'Vessel Caliber', normal_range: '16.0 - 22.0 μm', status: 'Calibrated' },
-            redness_index: { value: 48.2, unit: 'index', name: 'Erythema / Redness Index', normal_range: '40.0 - 55.0', status: 'Diagnostic' },
-            hue_variation: { value: 16.5, unit: '°', name: 'Chromatic Hue Variance', normal_range: '12.0 - 24.0°', status: 'Normal' },
-            optic_disc_contrast: { value: 2.45, unit: 'gradient', name: 'Optic Disc Contrast', normal_range: '2.00 - 3.50', status: 'Sharp' },
-            macular_perfusion: { value: 38.6, unit: 'index', name: 'Macular Perfusion Proxy', normal_range: '30.0 - 45.0%', status: 'Normal' },
-            tortuosity_index: { value: 1.18, unit: 'arc/chord', name: 'Microvascular Tortuosity', normal_range: '1.10 - 1.25', status: 'Within Limits' },
-            scleral_vascularization: { value: 24.1, unit: 'score', name: 'Scleral Vascular Score', normal_range: '15.0 - 32.0', status: 'Optimal' },
-            isobestic_ratio: { value: 1.34, unit: 'OD ratio', name: 'Hemoglobin Isobestic Extinction Ratio (540/577nm)', normal_range: '1.20 - 1.45', status: 'Oxyhemoglobin Calibrated' },
-            pca_projection: { pc1: 0.842, pc2: -0.315, name: 'PCA Latent Projections', normal_range: '[-2.0, +2.0]', status: 'Converged' },
-          },
-          transfusionCompatibility: {
-            can_donate_to: ['O+', 'A+', 'B+', 'AB+'],
-            can_receive_from: ['O+', 'O-'],
-            donor_status: 'Universal Positive Donor',
-            surface_antigens: 'RhD Antigen Present',
-            plasma_antibodies: 'Anti-A, Anti-B',
-          },
-          patientData: {
-            name: patientForm.name,
-            id: patientForm.id,
-            age: patientForm.age,
-            gender: patientForm.gender,
-            eye_side: patientForm.eyeSide,
-          },
-          qualityScore: 0.92,
-          isDemo: true,
-          modelName: 'BloodEye-CNN-Biometric-v2',
+      console.warn('Backend server unavailable, activating in-browser neural CV inference engine:', err);
+      try {
+        setStatus('analyzing');
+        const localResult = await runClientSideMLInference(blob, {
+          name: patientForm.name,
+          id: patientForm.id,
+          age: Number(patientForm.age) || 28,
+          gender: patientForm.gender,
+          eye_side: patientForm.eyeSide,
         });
+        setPrediction(localResult);
         setStatus('done');
-      }, 1200);
+      } catch (clientErr: any) {
+        console.error('Client-side inference failed:', clientErr);
+        setStatus('error');
+      }
     }
   };
 
@@ -799,6 +768,16 @@ export const ImageAnalysis: React.FC = () => {
                       >
                         Grad-CAM
                       </button>
+                      {prediction.vesselMaskOverlay && (
+                        <button
+                          onClick={() => setActiveImageView('vessels')}
+                          className={`px-3 py-1 rounded-lg transition ${
+                            activeImageView === 'vessels' ? 'bg-white text-emerald-700 shadow-sm font-bold' : 'text-slate-600'
+                          }`}
+                        >
+                          Vessels
+                        </button>
+                      )}
                       <button
                         onClick={() => setActiveImageView('split')}
                         className={`px-3 py-1 rounded-lg transition ${
@@ -830,6 +809,20 @@ export const ImageAnalysis: React.FC = () => {
                         <div className="absolute top-2 left-2 px-2.5 py-1 bg-cyan-950/90 border border-cyan-500/40 backdrop-blur-md rounded-md text-[11px] text-cyan-300 font-mono flex items-center space-x-1.5">
                           <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
                           <span>DEEP VASCULAR ATTENTION MAP (JET OVERLAY)</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {activeImageView === 'vessels' && (
+                      <div className="relative aspect-[16/9] flex items-center justify-center overflow-hidden rounded-xl bg-black">
+                        <img
+                          src={prediction.vesselMaskOverlay || capturedPreview}
+                          alt="Binary Vessel Mask"
+                          className="max-h-full object-contain"
+                        />
+                        <div className="absolute top-2 left-2 px-2.5 py-1 bg-emerald-950/90 border border-emerald-500/40 backdrop-blur-md rounded-md text-[11px] text-emerald-300 font-mono flex items-center space-x-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>BINARY RETINAL MICROVASCULAR SEGMENTATION (FRANGI HESSIAN)</span>
                         </div>
                       </div>
                     )}
