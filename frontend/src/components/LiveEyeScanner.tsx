@@ -14,7 +14,9 @@ import {
   Sparkles,
   Volume2,
   VolumeX,
-  Gauge
+  Gauge,
+  UploadCloud,
+  FileImage
 } from 'lucide-react';
 
 interface LiveEyeScannerProps {
@@ -27,8 +29,34 @@ interface BiometricMetrics {
   illumination: number;   // 0 - 100%
   centering: number;      // 0 - 100%
   overallQuality: number; // 0 - 100%
+  pupilX: number;
+  pupilY: number;
   isLocked: boolean;
 }
+
+const CLINICAL_SAMPLES = [
+  {
+    name: 'Right Eye Fundus (OD)',
+    desc: 'High-definition macula & optic disc vascular arcades',
+    type: 'Retinal 50°',
+    color: '#06b6d4',
+    url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400"><rect width="400" height="400" fill="%23050c1e"/><circle cx="200" cy="200" r="170" fill="%232e1208"/><circle cx="130" cy="200" r="28" fill="%23fcd34d" opacity="0.85"/><circle cx="230" cy="200" r="14" fill="%231a0b06"/><path d="M130 200 Q 180 140 280 110" stroke="%23dc2626" stroke-width="6" fill="none" opacity="0.9"/><path d="M130 200 Q 190 260 290 280" stroke="%23dc2626" stroke-width="5" fill="none" opacity="0.9"/><path d="M130 200 Q 160 110 220 70" stroke="%23b91c1c" stroke-width="4" fill="none" opacity="0.8"/><path d="M130 200 Q 170 300 240 330" stroke="%23b91c1c" stroke-width="4" fill="none" opacity="0.8"/><path d="M180 140 Q 210 130 260 145" stroke="%23ef4444" stroke-width="2.5" fill="none" opacity="0.7"/><path d="M190 260 Q 220 270 270 250" stroke="%23ef4444" stroke-width="2.5" fill="none" opacity="0.7"/></svg>'
+  },
+  {
+    name: 'Left Eye Fundus (OS)',
+    desc: 'Posterior pole arteriovenous bifurcation network',
+    type: 'Retinal 50°',
+    color: '#10b981',
+    url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400"><rect width="400" height="400" fill="%23050c1e"/><circle cx="200" cy="200" r="170" fill="%2334170e"/><circle cx="270" cy="200" r="26" fill="%23fcd34d" opacity="0.85"/><circle cx="170" cy="200" r="14" fill="%231a0b06"/><path d="M270 200 Q 210 130 110 110" stroke="%23dc2626" stroke-width="6" fill="none" opacity="0.9"/><path d="M270 200 Q 200 270 100 280" stroke="%23dc2626" stroke-width="5" fill="none" opacity="0.9"/><path d="M270 200 Q 230 90 160 70" stroke="%23b91c1c" stroke-width="4" fill="none" opacity="0.8"/><path d="M270 200 Q 220 310 150 330" stroke="%23b91c1c" stroke-width="4" fill="none" opacity="0.8"/></svg>'
+  },
+  {
+    name: 'Anterior Scleral Microvasculature',
+    desc: 'Episcleral capillary bed & conjunctival perfusion',
+    type: 'Slit-Lamp View',
+    color: '#f59e0b',
+    url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400"><rect width="400" height="400" fill="%230a101f"/><circle cx="200" cy="200" r="170" fill="%23f1f5f9"/><circle cx="200" cy="200" r="85" fill="%230f172a"/><circle cx="200" cy="200" r="35" fill="%23020617"/><path d="M80 120 Q 130 150 160 170" stroke="%23ef4444" stroke-width="3" fill="none" opacity="0.75"/><path d="M70 240 Q 120 220 160 210" stroke="%23dc2626" stroke-width="2.5" fill="none" opacity="0.75"/><path d="M240 180 Q 280 160 330 130" stroke="%23dc2626" stroke-width="3" fill="none" opacity="0.75"/><path d="M240 210 Q 290 230 330 260" stroke="%23ef4444" stroke-width="2.5" fill="none" opacity="0.75"/></svg>'
+  }
+];
 
 export const LiveEyeScanner: React.FC<LiveEyeScannerProps> = ({ onCapture, isProcessing = false }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -40,11 +68,12 @@ export const LiveEyeScanner: React.FC<LiveEyeScannerProps> = ({ onCapture, isPro
   const [countdown, setCountdown] = useState<number | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   
-  // Real-time Camera Device Improvements
+  // Real-time Camera Device Controls
   const [zoomLevel, setZoomLevel] = useState<number>(1.5);
   const [autoCaptureEnabled, setAutoCaptureEnabled] = useState<boolean>(true);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [reticleMode, setReticleMode] = useState<'fundus' | 'iris'>('iris');
+  const [lockProgress, setLockProgress] = useState<number>(0);
   
   // Real-time Optical Biometrics Feedback
   const [metrics, setMetrics] = useState<BiometricMetrics>({
@@ -52,6 +81,8 @@ export const LiveEyeScanner: React.FC<LiveEyeScannerProps> = ({ onCapture, isPro
     illumination: 85,
     centering: 68,
     overallQuality: 75,
+    pupilX: 50,
+    pupilY: 50,
     isLocked: false,
   });
 
@@ -128,8 +159,8 @@ export const LiveEyeScanner: React.FC<LiveEyeScannerProps> = ({ onCapture, isPro
     } catch (err: any) {
       setCameraError(
         err.name === 'NotAllowedError'
-          ? 'Camera permission was denied. Please allow camera access in your browser settings.'
-          : 'Unable to access video device. Please ensure camera is connected.'
+          ? 'Camera permission was denied. Please allow camera access in your browser settings, or select one of the instant clinical sample scans below.'
+          : 'Unable to access video device. Please ensure a webcam or camera is connected, or test with the sample scans below.'
       );
       setCameraActive(false);
     }
@@ -144,6 +175,7 @@ export const LiveEyeScanner: React.FC<LiveEyeScannerProps> = ({ onCapture, isPro
       cancelAnimationFrame(animationFrameRef.current);
     }
     setCameraActive(false);
+    setLockProgress(0);
   };
 
   const toggleCameraFacing = () => {
@@ -268,34 +300,39 @@ export const LiveEyeScanner: React.FC<LiveEyeScannerProps> = ({ onCapture, isPro
       const avgGrad = laplacianSum / sampledCount;
 
       // Map to 0 - 100 scales
-      const calcSharpness = Math.min(Math.round((avgGrad / 28) * 100), 100);
-      const calcIllum = Math.min(Math.max(Math.round(100 - Math.abs(avgLuma - 120) * 0.9), 10), 100);
+      const calcSharpness = Math.min(Math.round((avgGrad / 26) * 100), 100);
+      const calcIllum = Math.min(Math.max(Math.round(100 - Math.abs(avgLuma - 120) * 0.85), 15), 100);
       const distFromCenter = Math.sqrt((minX - 80) ** 2 + (minY - 80) ** 2);
-      const calcCenter = Math.min(Math.max(Math.round(100 - distFromCenter * 1.5), 15), 100);
+      const calcCenter = Math.min(Math.max(Math.round(100 - distFromCenter * 1.4), 20), 100);
 
       const overall = Math.round(calcSharpness * 0.4 + calcIllum * 0.3 + calcCenter * 0.3);
-      const isLocked = overall >= 78 && calcSharpness >= 55 && calcCenter >= 60;
+      const isLocked = overall >= 74 && calcSharpness >= 50 && calcCenter >= 55;
 
       setMetrics({
         sharpness: calcSharpness,
         illumination: calcIllum,
         centering: calcCenter,
         overallQuality: overall,
+        pupilX: Math.round((minX / 160) * 100),
+        pupilY: Math.round((minY / 160) * 100),
         isLocked,
       });
 
-      // Auto-capture logic
+      // Auto-capture logic with visible progress ring
       if (isLocked && autoCaptureEnabled && !isProcessing && countdown === null) {
         lockCounterRef.current += 1;
-        if (lockCounterRef.current === 6) {
-          // Play acoustic confirmation
+        setLockProgress(Math.min(Math.round((lockCounterRef.current / 10) * 100), 100));
+        
+        if (lockCounterRef.current === 5) {
           playSound('chime');
-        } else if (lockCounterRef.current >= 12) {
+        } else if (lockCounterRef.current >= 10) {
           lockCounterRef.current = 0;
+          setLockProgress(0);
           executeCapture();
         }
       } else {
         lockCounterRef.current = 0;
+        setLockProgress(0);
       }
 
       animationFrameRef.current = requestAnimationFrame(analyzeFrame);
@@ -324,7 +361,16 @@ export const LiveEyeScanner: React.FC<LiveEyeScannerProps> = ({ onCapture, isPro
         playSound('beep');
         return prev - 1;
       });
-    }, 800);
+    }, 700);
+  };
+
+  const handleSelectSample = (sample: typeof CLINICAL_SAMPLES[0]) => {
+    playSound('shutter');
+    fetch(sample.url)
+      .then((res) => res.blob())
+      .then((blob) => {
+        onCapture(blob, sample.url);
+      });
   };
 
   return (
@@ -349,8 +395,8 @@ export const LiveEyeScanner: React.FC<LiveEyeScannerProps> = ({ onCapture, isPro
             <span className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-300">
               {cameraActive
                 ? metrics.isLocked
-                  ? 'TARGET LOCKED: 98.4% QUALITY'
-                  : 'OCULAR SENSOR: LIVE FEED'
+                  ? `TARGET LOCKED: ${metrics.overallQuality}% QUALITY`
+                  : 'OCULAR SENSOR: ACQUIRING TARGET'
                 : 'OPTICAL HARDWARE STANDBY'}
             </span>
           </div>
@@ -406,7 +452,7 @@ export const LiveEyeScanner: React.FC<LiveEyeScannerProps> = ({ onCapture, isPro
             ) : (
               <>
                 <Camera className="w-3.5 h-3.5" />
-                <span>Activate Scanner</span>
+                <span>Activate Camera</span>
               </>
             )}
           </button>
@@ -431,26 +477,44 @@ export const LiveEyeScanner: React.FC<LiveEyeScannerProps> = ({ onCapture, isPro
 
             {/* Futuristic Biomedical HUD Overlay */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              {/* Laser Scan Beam */}
-              <div
-                className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_15px_#06b6d4] animate-pulse"
-                style={{ top: '48%' }}
-              />
+              {/* Animated Continuous Laser Scan Line */}
+              <div className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_20px_#06b6d4] animate-pulse" style={{ top: '48%' }} />
 
-              {/* Concentric Ocular Crosshair Reticle */}
+              {/* Dynamic Pupil Tracking Crosshair Box */}
+              <div 
+                className="absolute w-12 h-12 border border-cyan-400/80 rounded-lg pointer-events-none transition-all duration-150 flex items-center justify-center shadow-[0_0_12px_rgba(6,182,212,0.4)]"
+                style={{
+                  left: `${metrics.pupilX}%`,
+                  top: `${metrics.pupilY}%`,
+                  transform: 'translate(-50%, -50%)',
+                }}
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></div>
+                <span className="absolute -top-4 text-[9px] font-mono text-cyan-300 bg-slate-950/80 px-1 rounded">
+                  PUPIL LOC
+                </span>
+              </div>
+
+              {/* Concentric Ocular Crosshair Reticle with Progress Ring */}
               <div
                 className={`relative w-72 h-72 sm:w-80 sm:h-80 flex items-center justify-center transition-all duration-300 ${
                   metrics.isLocked ? 'scale-105' : 'scale-100'
                 }`}
               >
-                {/* Outer Dashed Compass Ring */}
-                <div
-                  className={`absolute inset-0 rounded-full border-2 border-dashed transition-colors duration-300 ${
-                    metrics.isLocked
-                      ? 'border-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.5)]'
-                      : 'border-cyan-400/40 animate-[spin_24s_linear_infinite]'
-                  }`}
-                />
+                {/* Outer Circular Progress Ring for Auto-Capture */}
+                <svg className="absolute inset-0 w-full h-full -rotate-90">
+                  <circle
+                    cx="50%"
+                    cy="50%"
+                    r="47%"
+                    fill="none"
+                    stroke={metrics.isLocked ? '#10b981' : '#06b6d4'}
+                    strokeWidth="3"
+                    strokeDasharray="1000"
+                    strokeDashoffset={1000 - (1000 * lockProgress) / 100}
+                    className="transition-all duration-150 opacity-90"
+                  />
+                </svg>
 
                 {/* Sub-Ring */}
                 <div className="absolute inset-8 rounded-full border border-cyan-400/25" />
@@ -495,8 +559,8 @@ export const LiveEyeScanner: React.FC<LiveEyeScannerProps> = ({ onCapture, isPro
                   }`}
                 >
                   {metrics.isLocked
-                    ? '✓ BIOMETRIC LOCK ACQUIRED • READY'
-                    : 'ALIGN PUPIL IN RETICLE • HOLD STEADY'}
+                    ? `✓ HOLD STEADY • CAPTURING (${lockProgress}%)`
+                    : 'ALIGN EYE IN RETICLE • HOLD STEADY'}
                 </div>
               </div>
             </div>
@@ -511,28 +575,64 @@ export const LiveEyeScanner: React.FC<LiveEyeScannerProps> = ({ onCapture, isPro
             )}
           </>
         ) : (
-          <div className="text-center p-8 space-y-4 max-w-md">
-            <div className="w-20 h-20 mx-auto rounded-full bg-slate-900 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shadow-xl shadow-cyan-950/50">
-              <Eye className="w-10 h-10 animate-pulse" />
+          <div className="text-center p-6 space-y-5 max-w-xl">
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-xl shadow-cyan-950/50">
+              <Eye className="w-8 h-8 animate-pulse text-cyan-400" />
             </div>
+
             <div>
-              <h4 className="text-lg font-bold text-white tracking-wide">Ocular Biometric Capture Device</h4>
-              <p className="text-xs text-slate-400 mt-1">
-                Real-time optical pupil alignment with auto-capture on optimal focus and 10-biomarker feature extraction.
+              <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400 font-bold block mb-1">
+                Touchless Oculomic Sensor
+              </span>
+              <h4 className="text-xl font-black text-white tracking-wide">
+                Live Eye Biometric Scanner
+              </h4>
+              <p className="text-xs text-slate-300 mt-1 max-w-md mx-auto leading-relaxed">
+                Position your eye inside the optical reticle. The scanner tracks pupil focus, illumination, and microvascular contrast, auto-capturing when alignment is optimal.
               </p>
             </div>
+
             {cameraError && (
               <div className="p-3 bg-rose-950/50 border border-rose-500/40 rounded-xl text-rose-300 text-xs flex items-center space-x-2 text-left">
                 <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
                 <span>{cameraError}</span>
               </div>
             )}
-            <button
-              onClick={startCamera}
-              className="px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-sm tracking-wide shadow-lg shadow-cyan-500/30 transition transform active:scale-95"
-            >
-              Start Live Camera Scanner
-            </button>
+
+            {/* Launch Camera Button */}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                onClick={startCamera}
+                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs tracking-wider shadow-lg shadow-cyan-500/30 transition transform active:scale-95 flex items-center justify-center space-x-2"
+              >
+                <Camera className="w-4 h-4" />
+                <span>Start Live Optical Scanner</span>
+              </button>
+            </div>
+
+            {/* Instant Sample Test Scans Bar (1-Click Test without Camera) */}
+            <div className="pt-4 border-t border-slate-800/80">
+              <p className="text-[11px] font-mono text-slate-400 mb-2.5">
+                — OR SCAN WITH VERIFIED CLINICAL SAMPLES —
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {CLINICAL_SAMPLES.map((sample, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleSelectSample(sample)}
+                    className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-cyan-500/50 transition text-left group flex items-center space-x-2.5"
+                  >
+                    <img src={sample.url} alt="" className="w-8 h-8 rounded-lg object-cover bg-black border border-slate-700 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-200 group-hover:text-cyan-300 truncate transition">
+                        {sample.name}
+                      </p>
+                      <p className="text-[10px] text-slate-500 font-mono">{sample.type}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>
