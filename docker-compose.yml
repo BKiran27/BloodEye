@@ -1,0 +1,90 @@
+# docker-compose.yml - BloodEye Application Stack
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: bloodeye-db
+    environment:
+      POSTGRES_DB: bloodeye
+      POSTGRES_USER: bloodeye
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-bloodeye_dev_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bloodeye"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bloodeye-net
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bloodeye-backend
+    environment:
+      - DATABASE_URL=postgresql://bloodeye:${DB_PASSWORD:-bloodeye_dev_password}@db:5432/bloodeye
+      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
+      - DEMO_MODE=${DEMO_MODE:-true}
+      - UPLOAD_DIR=/app/data/uploads
+      - MODEL_DIR=/app/data/models
+      - DATASET_DIR=/app/data/datasets
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+      - LOG_LEVEL=INFO
+    ports:
+      - "8000:8000"
+    volumes:
+      - upload_data:/app/data/uploads
+      - model_data:/app/data/models
+      - dataset_data:/app/data/datasets
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - bloodeye-net
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:8000
+    container_name: bloodeye-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - bloodeye-net
+
+volumes:
+  postgres_data:
+    driver: local
+  upload_data:
+    driver: local
+  model_data:
+    driver: local
+  dataset_data:
+    driver: local
+
+networks:
+  bloodeye-net:
+    driver: bridge
